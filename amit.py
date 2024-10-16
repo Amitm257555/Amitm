@@ -1,112 +1,104 @@
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+import logging
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, ConversationHandler
 
-# Bot ka Token jo aapko BotFather se mila
-TOKEN = '7660912209:AAEDIP4-zQJXvomFwqSby5MFAOHZtG8KkD0'
+# Logging configuration
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Admin user ID ko define karein
-ADMIN_USER_ID = 5239817533  # Isse apne Telegram user ID se replace karein
+# Replace with your token and admin ID
+TOKEN = '7660912209:AAEDIP4-zQJXvomFwqSby5MFAOHZtG8KkD0'  # Add your bot token here
+ADMIN_USER_ID = 5239817533  # Add your admin user ID here
 
-# User data structure
-user_data = {}
+# States for ConversationHandler
+IP_PORT, CONFIRM_ATTACK = range(2)
 
-# Command for /start
-def start(update: Update, context: CallbackContext):
+# Dictionary to store user attack details
+user_attack_details = {}
+
+# Start command
+def start(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
-    if user_id not in user_data:
-        update.message.reply_text("Please authenticate with admin to use this bot.")
-    else:
-        reply_text = (
-            "Welcome! Choose an option:\n"
-            "1. Save Attack\n"
-            "2. Start Attack\n"
-            "3. Stop Attack"
+    if user_id == ADMIN_USER_ID:
+        reply_keyboard = [['😎 Save Attack', '🚀 Start Attack', '🛑 Stop Attack']]
+        update.message.reply_text(
+            'Welcome, Admin! Choose an option:',
+            reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
         )
-        update.message.reply_text(reply_text)
-
-# Command for adding user by admin
-def add_user(update: Update, context: CallbackContext):
-    if update.message.from_user.id == ADMIN_USER_ID:
-        if len(context.args) == 1:
-            user_id = int(context.args[0])
-            user_data[user_id] = {'ip': None, 'port': None}
-            update.message.reply_text(f'User with ID {user_id} added successfully!')
-        else:
-            update.message.reply_text('Usage: /add6023 <user_id>')
     else:
-        update.message.reply_text('You are not authorized to add users!')
+        update.message.reply_text('You are not authorized to use this bot.')
 
-# Command for saving attack details
-def save_attack(update: Update, context: CallbackContext):
+# Save Attack command
+def save_attack(update: Update, context: CallbackContext) -> int:
+    update.message.reply_text('Please enter the target IP and port in this format: `IP PORT`')
+    return IP_PORT
+
+# Function to save IP and Port
+def receive_ip_port(update: Update, context: CallbackContext) -> int:
     user_id = update.message.from_user.id
-    if user_id in user_data:
-        update.message.reply_text("Please enter the target IP and port in this format: `IP PORT`")
-    else:
-        update.message.reply_text("You need to authenticate first.")
+    text = update.message.text
+    try:
+        ip, port = text.split()
+        user_attack_details[user_id] = {'ip': ip, 'port': port}
+        update.message.reply_text(f'Target IP and Port saved as: {ip} {port}')
+        return CONFIRM_ATTACK
+    except ValueError:
+        update.message.reply_text('Invalid format. Please enter the IP and port again.')
+        return IP_PORT
 
-# Save IP and Port
-def handle_message(update: Update, context: CallbackContext):
+# Start Attack command
+def start_attack(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
-    if user_id in user_data:
-        # Split the message into IP and PORT
-        try:
-            ip, port = update.message.text.split()
-            user_data[user_id]['ip'] = ip
-            user_data[user_id]['port'] = port
-            update.message.reply_text(f'Target IP and Port saved as: {ip} {port}')
-        except ValueError:
-            update.message.reply_text("Invalid format! Please enter in `IP PORT` format.")
+    if user_id in user_attack_details:
+        ip = user_attack_details[user_id]['ip']
+        port = user_attack_details[user_id]['port']
+        update.message.reply_text(f'Attack started on {ip}:{port}!')
+        # Add your attack-starting logic here
     else:
-        update.message.reply_text("You need to authenticate first.")
+        update.message.reply_text('No IP and port saved. Use the "😎 Save Attack" option first.')
 
-# Start Attack Command
-def start_attack(update: Update, context: CallbackContext):
+# Stop Attack command
+def stop_attack(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
-    if user_id in user_data:
-        ip = user_data[user_id]['ip']
-        port = user_data[user_id]['port']
-        if ip and port:
-            update.message.reply_text(f'Attack started on {ip}:{port}')
-            # Yahan aap apna attack start karne ka code likh sakte hain
-        else:
-            update.message.reply_text("You need to save target IP and port first.")
+    if user_id in user_attack_details:
+        ip = user_attack_details[user_id]['ip']
+        port = user_attack_details[user_id]['port']
+        update.message.reply_text(f'Attack stopped on {ip}:{port}!')
+        # Add your attack-stopping logic here
     else:
-        update.message.reply_text("You need to authenticate first.")
+        update.message.reply_text('No attack in progress to stop.')
 
-# Stop Attack Command
-def stop_attack(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
-    if user_id in user_data:
-        ip = user_data[user_id]['ip']
-        port = user_data[user_id]['port']
-        if ip and port:
-            update.message.reply_text(f'Attack stopped on {ip}:{port}')
-            # Yahan aap apna attack stop karne ka code likh sakte hain
-        else:
-            update.message.reply_text("No attack is running. Save IP and port first.")
-    else:
-        update.message.reply_text("You need to authenticate first.")
+# Cancel command to stop the conversation
+def cancel(update: Update, context: CallbackContext) -> int:
+    update.message.reply_text('Operation cancelled.')
+    return ConversationHandler.END
 
-def main():
-    # Bot ke liye Updater ka setup
-    updater = Updater(TOKEN, use_context=True)
+# Main function to run the bot
+def main() -> None:
+    updater = Updater(TOKEN)
+    dispatcher = updater.dispatcher
 
-    dp = updater.dispatcher
+    # Conversation handler to handle saving IP and port
+    conv_handler = ConversationHandler(
+        entry_points=[MessageHandler(Filters.regex('😎 Save Attack'), save_attack)],
+        states={
+            IP_PORT: [MessageHandler(Filters.text & ~Filters.command, receive_ip_port)],
+            CONFIRM_ATTACK: [MessageHandler(Filters.regex('🚀 Start Attack'), start_attack)]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)]
+    )
+
+    dispatcher.add_handler(conv_handler)
 
     # Command handlers
-    dp.add_handler(CommandHandler('start', start))
-    dp.add_handler(CommandHandler('add6023', add_user))
-    dp.add_handler(CommandHandler('save_attack', save_attack))
-    dp.add_handler(CommandHandler('start_attack', start_attack))
-    dp.add_handler(CommandHandler('stop_attack', stop_attack))
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(MessageHandler(Filters.regex('🚀 Start Attack'), start_attack))
+    dispatcher.add_handler(MessageHandler(Filters.regex('🛑 Stop Attack'), stop_attack))
 
-    # Message handler for saving IP and port
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
-
-    # Bot ko polling mode me start karna
+    # Start polling for updates
     updater.start_polling()
-
-    # Bot ko chalu rakhna
+    
+    # Idle to keep the bot running
     updater.idle()
 
 if __name__ == '__main__':
